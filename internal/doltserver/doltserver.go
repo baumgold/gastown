@@ -1290,8 +1290,9 @@ func Start(townRoot string) error {
 	}
 
 	// Acquire exclusive lock to prevent concurrent starts (same pattern as gt daemon).
-	// If the lock is held, retry briefly — the holder may be finishing up. If still
-	// held after retries, check if the holding process is alive. (gt-tosjp)
+	// If the lock is held, retry with a scaled timeout based on database count — Dolt
+	// startup is O(databases) and the old 3s fixed timeout caused a thundering herd
+	// when 7+ databases pushed startup past 3s. (gt-p1n)
 	lockFile := filepath.Join(daemonDir, "dolt.lock")
 	fileLock := flock.New(lockFile)
 	locked, err := fileLock.TryLock()
@@ -1304,8 +1305,16 @@ func Start(townRoot string) error {
 		}
 	}
 	if !locked {
-		// Retry a few times with short waits (the holder may be finishing)
-		for i := 0; i < 6; i++ {
+		// Scale wait by database count: each DB adds ~5s of Dolt startup time.
+		// Clamp to [30, 240] iterations (15s–120s) to bound the wait. (gt-p1n)
+		lockWaitDBs, _ := listDatabasesLocal(DefaultConfig(townRoot))
+		lockWaitIters := len(lockWaitDBs) * 10 // 10 × 500ms = 5s per database
+		if lockWaitIters < 30 {
+			lockWaitIters = 30 // minimum 15s
+		} else if lockWaitIters > 240 {
+			lockWaitIters = 240 // maximum 120s
+		}
+		for i := 0; i < lockWaitIters; i++ {
 			time.Sleep(500 * time.Millisecond)
 			locked, err = fileLock.TryLock()
 			if err == nil && locked {
@@ -1313,10 +1322,16 @@ func Start(townRoot string) error {
 			}
 		}
 		if !locked {
-			// Still locked. POSIX flocks auto-release on process death, so if we
-			// can't get it, something is actively holding it. Remove the stale lock
-			// file and try one more time. (gt-tosjp)
-			fmt.Fprintf(os.Stderr, "Warning: dolt.lock held for >3s — removing stale lock\n")
+			// Still locked after scaled timeout. Before assuming stale, check if
+			// Dolt is already running — another caller may have finished starting
+			// it while we waited. If so, return success instead of removing the
+			// lock and spawning a competing process. (gt-p1n thundering herd fix)
+			if already, _, _ := IsRunning(townRoot); already {
+				return nil
+			}
+			// Not running and lock is still held: the holder likely died.
+			// POSIX flocks auto-release on process death, so this is genuinely stale.
+			fmt.Fprintf(os.Stderr, "Warning: dolt.lock held for >%ds — removing stale lock\n", lockWaitIters/2)
 			_ = os.Remove(lockFile)
 			fileLock = flock.New(lockFile)
 			locked, err = fileLock.TryLock()
