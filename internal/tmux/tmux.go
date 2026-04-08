@@ -1860,6 +1860,11 @@ func containsWorkspaceTrustDialog(content string) bool {
 // Claude prompt ends with ">", shell prompts end with "$", "%", "#", or "❯".
 var promptSuffixes = []string{">", "$", "%", "#", "❯"}
 
+// promptPrefixes are box-drawing characters that begin multi-line prompt continuation
+// lines in common zsh/fish themes (e.g. "└─[0]", "╰─%"). These reliably indicate
+// a shell prompt is active even when the line doesn't end with a recognized suffix.
+var promptPrefixes = []string{"└─", "╰─"}
+
 // containsPromptIndicator checks if pane content contains a prompt indicator
 // that signals a shell or agent is ready (no dialog blocking it).
 func containsPromptIndicator(content string) bool {
@@ -1870,6 +1875,11 @@ func containsPromptIndicator(content string) bool {
 		}
 		for _, suffix := range promptSuffixes {
 			if strings.HasSuffix(trimmed, suffix) {
+				return true
+			}
+		}
+		for _, prefix := range promptPrefixes {
+			if strings.HasPrefix(trimmed, prefix) {
 				return true
 			}
 		}

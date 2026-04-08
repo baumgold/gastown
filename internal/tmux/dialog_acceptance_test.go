@@ -183,6 +183,8 @@ func TestContainsPromptIndicator(t *testing.T) {
 		{"claude prompt", "Hello! How can I help?\n>", true},
 		{"bash prompt", "user@host:~$", true},
 		{"zsh prompt", "╰─❯", true},
+		{"zsh multiline prompt", "┌─[user@host]\n└─[0]", true},
+		{"zsh multiline prompt exit 1", "┌─[user@host]\n└─[1]", true},
 		{"root prompt", "root@host:~#", true},
 		{"csh prompt", "host%", true},
 		{"dialog text only", "Quick safety check\nDo you trust this folder?", false},
