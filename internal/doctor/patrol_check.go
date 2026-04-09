@@ -309,7 +309,7 @@ const stuckWispsQuery = `SELECT id, title, status, updated_at FROM issues WHERE 
 func (c *PatrolNotStuckCheck) checkStuckWispsDolt(rigPath string, rigName string) ([]string, error) {
 	cmd := exec.Command("bd", "sql", "--csv", stuckWispsQuery) //nolint:gosec // G204: query is a constant
 	cmd.Dir = rigPath
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output() // stdout only — stderr diagnostics (e.g. permission warnings) must not corrupt CSV
 	if err != nil {
 		return nil, fmt.Errorf("bd sql: %w", err)
 	}
