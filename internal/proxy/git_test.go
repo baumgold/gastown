@@ -667,7 +667,24 @@ func TestHandleReceivePackIntegration(t *testing.T) {
 	// Build a local git repo with one commit to push.
 	localRepo := t.TempDir()
 	gitHome := t.TempDir()
-	baseEnv := append(os.Environ(),
+
+	// Build a clean base environment that excludes SSL CA variables which
+	// would override the test-specific http.sslCAInfo set via -c flags.
+	// GIT_SSL_CAINFO (and similar) take precedence over git config, so they
+	// must be removed to allow the test CA to be trusted.
+	sslCAVars := map[string]bool{
+		"GIT_SSL_CAINFO": true,
+		"CURL_CA_BUNDLE": true,
+		"SSL_CERT_FILE":  true,
+	}
+	baseEnv := make([]string, 0, len(os.Environ())+7)
+	for _, e := range os.Environ() {
+		k, _, _ := strings.Cut(e, "=")
+		if !sslCAVars[k] {
+			baseEnv = append(baseEnv, e)
+		}
+	}
+	baseEnv = append(baseEnv,
 		"GIT_CONFIG_NOSYSTEM=1",
 		"HOME="+gitHome,
 		"GIT_TERMINAL_PROMPT=0", // suppress any interactive credential prompts
