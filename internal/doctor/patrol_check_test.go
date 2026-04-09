@@ -374,5 +374,37 @@ func TestPatrolNotStuckCheck_Run_DoltFailureReportsError(t *testing.T) {
 	}
 }
 
+// TestCheckStuckWispsDolt_StderrWarningDoesNotCorruptCSV verifies that when bd
+// writes a diagnostic warning to stderr (e.g. ".beads directory has 0755 permissions"),
+// it does NOT appear in the CSV output and does NOT cause a parse failure.
+// Regression test for: gt-hsf (bd sql --csv writes permission warning to stdout).
+func TestCheckStuckWispsDolt_StderrWarningDoesNotCorruptCSV(t *testing.T) {
+	// Create a fake 'bd' binary that writes a warning to stderr and clean CSV to stdout.
+	tmpDir := t.TempDir()
+	fakeBd := filepath.Join(tmpDir, "bd")
+	script := `#!/bin/sh
+echo "warning: .beads directory has 0755 permissions, recommend 0700" >&2
+echo "id,title,status,updated_at"
+`
+	if err := os.WriteFile(fakeBd, []byte(script), 0755); err != nil { //nolint:gosec
+		t.Fatalf("WriteFile fake bd: %v", err)
+	}
+
+	// Prepend tmpDir to PATH so exec.Command("bd",...) finds our fake binary.
+	origPath := os.Getenv("PATH")
+	t.Setenv("PATH", tmpDir+string(os.PathListSeparator)+origPath)
+
+	rigDir := t.TempDir()
+	check := NewPatrolNotStuckCheck()
+	stuck, err := check.checkStuckWispsDolt(rigDir, "testrig")
+
+	if err != nil {
+		t.Fatalf("checkStuckWispsDolt returned error (stderr warning corrupted CSV): %v", err)
+	}
+	if len(stuck) != 0 {
+		t.Errorf("expected no stuck wisps, got %v", stuck)
+	}
+}
+
 // Suppress unused import warning for fmt (used in test output formatting).
 var _ = fmt.Sprintf
