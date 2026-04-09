@@ -1646,12 +1646,17 @@ func (t *Tmux) NudgeSessionWithOpts(session, message string, opts NudgeOpts) err
 	// running the agent rather than sending to the focused pane.
 	target := session
 	if agentPane, err := t.FindAgentPane(session); err == nil && agentPane != "" {
-		// Qualify the pane ID with the session name (e.g., "hq-dog-alpha:%1")
-		// to avoid ambiguity. On some tmux versions (e.g., 3.3 on Windows),
-		// pane IDs are NOT globally unique — every session may have "%1".
-		// A bare "send-keys -t %1" targets the attached session's pane,
-		// not necessarily this session's.
-		target = session + ":" + agentPane
+		if strings.HasPrefix(agentPane, "%") {
+			// Pane IDs (%N) are globally unique in tmux 3.4+ on Linux/macOS.
+			// Using "session:%N" is invalid tmux syntax — tmux treats the token
+			// after ":" as a window specifier, not a pane ID, giving
+			// "can't find window: %N". Use the bare pane ID instead.
+			target = agentPane
+		} else {
+			// Non-% pane references (e.g. index "0") need session qualification
+			// to avoid targeting the wrong session's pane.
+			target = session + ":" + agentPane
+		}
 	}
 
 	// 0. Pre-delivery: dismiss Rewind menu if the session is stuck in it.
